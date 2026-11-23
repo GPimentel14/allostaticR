@@ -1,0 +1,24 @@
+# R session files
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+# Build and check outputs (rebuild with R CMD build / R CMD check)
+*.Rcheck/
+*.tar.gz
+inst/doc/
+doc/
+Meta/
+
+# Local tool and credential directories
+.aws/
+.codex/
+.agents/
+.licenses/
+
+# Default graphics device output from scripts
+Rplots.pdf
+
+# Local helper scripts
+update

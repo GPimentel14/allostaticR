@@ -1,0 +1,79 @@
+---
+title: "Reproducible scoring and user-controlled graphics"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Reproducible scoring and user-controlled graphics}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width = 7, fig.height = 4.5)
+```
+
+Define a protocol before scoring. Values must already use the declared units.
+The following example uses synthetic measurements, not clinical thresholds.
+
+```{r}
+library(allostaticR)
+data <- simulate_biomarkers(100)
+spec <- define_protocol(list(
+  define_biomarker("sbp", "cardiovascular", "high", "mmHg"),
+  define_biomarker("hdl", "metabolic", "low", "mg/dL"),
+  define_biomarker("crp", "inflammatory", "high", "mg/L")
+))
+reference <- fit_reference(data, spec, label = "Synthetic baseline")
+reference_cutoffs(reference)
+result <- allostatic_load(data, reference = reference, id = "id", group = "group", graphics = "auto")
+summary(result)
+result$plots$distribution
+result$plots$biomarkers
+result$plots$coverage
+result$plots$groups
+```
+
+Thresholds are fixed after fitting. Applying them to new data never re-estimates
+the reference quantiles. High risk uses the upper quantile; low risk uses its
+complement. Equality counts as risk unless `inclusive = FALSE`. Ties can produce
+risk prevalences above the nominal tail probability. Bilateral risk uses both tails.
+
+```{r}
+new_data <- simulate_biomarkers(20, seed = 7)
+new_result <- score_load(new_data, reference, id = "id")
+head(as.data.frame(new_result, what = "components"))
+```
+
+Missing observations remain missing contributions. Complete panels are required
+by default. An alternative protocol can explicitly choose a proportion score and
+minimum coverage. Scores on different scales should not share a classification
+threshold. System summaries show observed proportions, not additional score terms.
+
+For publication, obtain English labels and customize the ggplot objects:
+
+```{r}
+plot_load(result, "distribution", locale = "en") +
+  ggplot2::labs(title = "Synthetic cohort")
+```
+
+Save any customized graphic with `ggplot2::ggsave()`. There are no automatic
+significance tests or clinical risk categories.
+
+
+## Define your own graphic
+
+Scoring returns data without creating figures by default. Choose your own
+geometry, axes, scales, colors and theme with standard ggplot2 functions:
+
+```{r custom-graphic}
+scores <- plot_data(result, "scores")
+ggplot2::ggplot(scores, ggplot2::aes(x = group, y = score)) +
+  ggplot2::geom_boxplot(fill = "white", width = 0.55, na.rm = TRUE) +
+  ggplot2::labs(x = "Study group", y = "Allostatic load score") +
+  ggplot2::theme_classic(base_size = 12)
+```
+
+Use `type = "biomarkers"` for long-format measured values, `"systems"` for
+system risk proportions, or `"cutoffs"` for fixed reference thresholds.
+Missing values remain in the extracted data. Presets from `plot_load()` are
+editable ggplot objects; pass `graphics = "auto"` to `allostatic_load()` to
+build the full preset collection.

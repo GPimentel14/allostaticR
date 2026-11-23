@@ -1,0 +1,63 @@
+# Measurement uncertainty: measurement_uncertainty() and the reference change
+# values of visit_changes().
+
+test_that("score distributions are exact", {
+  expect_equal(allostaticR:::.poisson_binomial(c(0.2, 0.5)), c(0.4, 0.5, 0.1))
+  p <- c(0.1, 0.35, 0.8, 0.5)
+  bf <- brute_force(p, rep(1, 4))
+  expect_equal(allostaticR:::.poisson_binomial(p), bf$prob)
+  systems <- c("s1", "s1", "s2", "s3")
+  d <- allostaticR:::.score_distribution(p, systems, "system_proportion")
+  bf <- brute_force(p, c(1 / 6, 1 / 6, 1 / 3, 1 / 3))
+  expect_equal(d$value, bf$value); expect_equal(d$prob, bf$prob)
+})
+
+test_that("component probabilities follow the log-normal decision model", {
+  d <- data.frame(a = c(10, 12, 0.5), b = c(5, 6, 6), treated = c(FALSE, FALSE, TRUE))
+  spec <- cutoff_spec(); spec$medications <- c(a = "treated")
+  r <- score_load(d, fit_reference(spec = spec))
+  u <- measurement_uncertainty(r, cv_table(), conf = 0.9)
+  sigma <- sqrt(log(1 + 0.02^2 + 0.1^2))
+  pa <- u$components$p_risk[u$components$biomarker == "a"]
+  expect_equal(pa, c(0.5, stats::pnorm(log(10), log(12), sigma, lower.tail = FALSE), 1))
+  expect_equal(u$components$p_risk[4], 0.5)
+  expect_equal(u$scores$expected[1], 1)
+  expect_equal(u$scores$p_observed[1], 0.25)
+  expect_equal(c(u$scores$lower[1], u$scores$upper[1]), c(0, 2))
+  expect_true(u$components$borderline[1])
+  expect_output(print(u), "Measurement uncertainty")
+  expect_silent(lapply(u$plots, ggplot2::ggplot_build))
+})
+
+test_that("zero variation reproduces observed scores and priors are checked", {
+  d <- data.frame(a = c(0.5, 10, 20, 30), b = c(6, 5, 7, 4))
+  r <- score_load(d, fit_reference(spec = cutoff_spec()))
+  exact <- measurement_uncertainty(r, cv_table(0, 0))
+  expect_equal(exact$scores$expected, r$scores$score)
+  expect_equal(exact$scores$p_observed, rep(1, 4))
+  expect_error(measurement_uncertainty(r, cv_table(0.5, 0.9), prior = "empirical"), "exceeds")
+  flat <- measurement_uncertainty(r, cv_table(0.02, 0.05))
+  shrunk <- measurement_uncertainty(r, cv_table(0.02, 0.05), prior = "empirical")
+  expect_equal(flat$components$p_risk[2], 0.5)
+  expect_lt(shrunk$components$p_risk[2], 0.5)
+  expect_error(measurement_uncertainty(r, cv_table(markers = "a")), "every protocol biomarker")
+  bad <- cv_table(); bad$source <- c("x", "")
+  expect_error(measurement_uncertainty(r, bad), "source")
+  z <- allostatic_load(data.frame(a = c(1, 2, 3)), define_protocol(list(define_biomarker("a", "s", "high", "u")), method = "z_mean"))
+  expect_error(measurement_uncertainty(z, cv_table(markers = "a")), "count protocol")
+})
+
+test_that("reference change values separate confirmed flips from noise", {
+  d <- data.frame(person = c("A", "A", "B", "B"), time = c(0, 1, 0, 1), a = c(9, 10, 5, 11), b = c(6, 6, 6, 6))
+  tr <- score_trajectory(d, fit_reference(spec = cutoff_spec()), "person", "time")
+  changes <- visit_changes(tr, variation = cv_table(0, 0.1))
+  expect_equal(changes$change, c(1, 1))
+  expect_equal(changes$n_flips, c(1, 1))
+  expect_equal(changes$n_confirmed_flips, c(0, 1))
+  expect_equal(changes$confirmed_change, c(0, 1))
+  details <- attr(changes, "biomarker_changes")
+  limit <- stats::qnorm(0.975) * sqrt(2) * sqrt(log(1.01))
+  expect_equal(details$rcv_up[1], exp(limit) - 1)
+  expect_equal(details$reason[details$biomarker == "a"], c("measurement", "measurement"))
+  expect_null(attr(visit_changes(tr), "biomarker_changes"))
+})

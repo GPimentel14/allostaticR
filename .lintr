@@ -1,0 +1,31 @@
+# Configuracion de lintr para allostaticR
+#
+# Sin este archivo lintr aplica sus valores por defecto, que no corresponden
+# al estilo real de este paquete y producen ~2245 avisos, casi todos ruido.
+# Los ajustes de abajo reducen la salida a avisos accionables.
+#
+#   line_length_linter(120L)
+#       El paquete usa lineas de hasta 177 caracteres (p95 = 118, p99 = 137).
+#       El limite por defecto de 80 marca el 28% de las lineas de R/.
+#
+#   indentation_linter(2L, hanging_indent_style = "never")
+#       Bloques indentados 2 espacios y continuaciones con sangria de bloque,
+#       que es el estilo que usa el codigo. "never" es la variante que mejor
+#       encaja (647 -> 413 avisos).
+#
+#   semicolon_linter = NULL
+#       El paquete empaqueta statements con ";" de forma deliberada y
+#       consistente en todos los ficheros (331 avisos).
+#
+#   object_name_linter = NULL
+#       Los 13 avisos corresponden a nombres convencionales del area
+#       (B = iteraciones bootstrap, X = matriz de diseno, G = diseno de spline),
+#       al nombre del metodo S3 as.data.frame.al_result y a .Random.seed.
+#       Los dos ultimos son obligatorios por convencion de R.
+
+linters: linters_with_defaults(
+    line_length_linter(120L),
+    indentation_linter(2L, hanging_indent_style = "never"),
+    semicolon_linter = NULL,
+    object_name_linter = NULL
+  )

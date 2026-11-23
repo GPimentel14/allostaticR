@@ -1,0 +1,137 @@
+---
+title: "Normative references, decomposition, patterns, uncertainty, multiverse and imputation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Normative references, decomposition, patterns, uncertainty, multiverse and imputation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(fig.width = 7.5, fig.height = 5, message = FALSE)
+has_quantreg <- requireNamespace("quantreg", quietly = TRUE)
+has_patchwork <- requireNamespace("patchwork", quietly = TRUE)
+has_imputation <- requireNamespace("mice", quietly = TRUE) && requireNamespace("randomForest", quietly = TRUE)
+```
+
+This vignette covers the extended analyses of allostaticR. All data are
+synthetic; coefficients of variation below are illustrative, not sourced
+clinical values.
+
+```{r data}
+library(allostaticR)
+reference_data <- simulate_biomarkers(1500, seed = 1, covariates = TRUE)
+study <- simulate_biomarkers(400, seed = 2, covariates = TRUE)
+biomarkers <- list(
+  define_biomarker("sbp", "cardiovascular", "high", "mmHg", label = "Systolic BP"),
+  define_biomarker("hdl", "metabolic", "low", "mg/dL", label = "HDL cholesterol"),
+  define_biomarker("crp", "inflammatory", "high", "mg/L", label = "CRP", transform = "log")
+)
+```
+
+## Normative references by sex and age
+
+Allostatic load rises mechanically with age when one sample-wide quantile
+is used. A protocol can instead fit thresholds within strata and as smooth
+functions of age, like growth-chart centiles: quantile regression on a natural
+spline of age for count methods, or age-specific means and SDs (Altman's
+absolute-residual method) for z-scores. Ages outside the reference range are
+not extrapolated unless the protocol allows it.
+
+```{r centiles, eval = has_quantreg, fig.height = 7}
+normative <- define_protocol(biomarkers, strata = "sex", age = "age")
+reference <- fit_reference(reference_data, normative, label = "Synthetic reference")
+reference_cutoffs(reference, at = data.frame(sex = "Female", age = c(30, 50, 70)))
+result <- score_load(study, reference, id = "id", group = "group")
+plot_centiles(result)
+```
+
+Sex-specific supplied cutoffs use named values:
+
+```{r sex-cutoffs}
+clinical <- define_protocol(list(
+  define_biomarker("sbp", "cardiovascular", "high", "mmHg", cutoff = 130),
+  define_biomarker("hdl", "metabolic", "low", "mg/dL", cutoff = c(Female = 50, Male = 40))
+), method = "cutoff_count", strata = "sex")
+reference_cutoffs(fit_reference(spec = clinical))
+```
+
+## z-scores and system balance
+
+`method = "z_mean"` averages risk-oriented z-scores (positive towards risk)
+against the reference mean and SD; `balance = "system"` gives each
+physiological system equal weight.
+
+```{r zscores}
+z_spec <- define_protocol(biomarkers, method = "z_mean", balance = "system")
+z_result <- score_load(study, fit_reference(reference_data, z_spec), group = "group")
+summary(z_result)
+```
+
+## Why do groups differ?
+
+With complete panels every score is a weighted sum of biomarker
+contributions, so a difference in mean load splits exactly into biomarker or
+system contributions.
+
+```{r decomposition}
+pooled <- score_load(study, fit_reference(reference_data, define_protocol(biomarkers)), group = "sex")
+gap <- decompose_gap(pooled, B = 300)
+gap
+gap$plots$waterfall
+```
+
+## Risk patterns behind the score
+
+```{r patterns, fig.height = 6}
+patterns <- risk_patterns(pooled)
+patterns$patterns
+patterns$redundancy$meff
+if (has_patchwork) patterns$plots$patterns else patterns$plots$frequency
+```
+
+```{r risk-map, eval = has_patchwork, fig.width = 9, fig.height = 5}
+plot_risk_map(pooled)
+```
+
+## Uncertainty from biological variation
+
+Coefficients of variation must be supplied with their source, for example
+from the EFLM Biological Variation Database.
+
+```{r uncertainty}
+cv <- data.frame(biomarker = c("sbp", "hdl", "crp"), cv_analytical = c(0.02, 0.02, 0.05),
+  cv_within = c(0.08, 0.07, 0.40), source = "Illustrative values for this vignette")
+u <- measurement_uncertainty(pooled, cv)
+u$summary
+u$plots$reclassification
+```
+
+`visit_changes(trajectory, variation = cv)` classifies first-to-last risk
+changes with reference change values.
+
+## Multiverse of scoring choices
+
+```{r multiverse, eval = has_quantreg}
+grid <- multiverse_grid(define_protocol(biomarkers), reference = c("pooled", "stratified", "age"),
+  strata = "sex", age = "age")
+multiverse <- multiverse_analysis(study, reference_data, grid, id = "id")
+multiverse
+multiverse$plots$stability
+```
+
+## Explicit multiple imputation
+
+Imputation is never automatic. `impute_biomarkers()` records every imputed
+cell; `score_imputed()` pools results with Rubin's rules; and
+`check_imputation()` compares methods on masked observed values.
+
+```{r imputation, eval = has_imputation}
+incomplete <- study
+set.seed(3)
+incomplete$crp[sample.int(nrow(incomplete), 40)] <- NA
+spec <- define_protocol(biomarkers)
+ref <- fit_reference(reference_data, spec)
+imputed <- impute_biomarkers(incomplete, spec, method = "rf", m = 5, maxit = 5, predictors = c("age", "sex"))
+score_imputed(imputed, ref, group = "sex")$pooled
+```

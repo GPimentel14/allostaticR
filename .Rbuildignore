@@ -1,0 +1,18 @@
+^ARCHITECTURE\.md$
+^cran-comments\.md$
+^.*\.tar\.gz$
+^.*\.Rcheck$
+^artifacts$
+^\.agents$
+^\.licenses$
+^\.codex$
+^\.aws$
+^\.git$
+^\.gitignore$
+^\.github$
+^\.lintr$
+^update$
+^bench\.R$
+^examples$
+# stray default graphics device output produced by scripts and tests
+^.*Rplots\.pdf$
